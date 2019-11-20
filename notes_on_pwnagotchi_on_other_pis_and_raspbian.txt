@@ -149,9 +149,16 @@ WantedBy=multi-user.target
 wget "https://github.com/evilsocket/pwnagotchi/archive/v1.0.1.zip"
 unzip v1.0.1.zip
 cd pwnagotchi-1.0.1
+
+### There's a great chance that executing the pwnagotchi pip3 install will fail due to lack of memory:
 sudo pip3 install .
 
-### This may or may not work. If the pip3 install fails, de-escalte privileges from root and try again.
+### If it do or you don't want to wait for failure, disable the pip cache:
+sudo pip3 --no-cache-dir install .
+
+### Things like tensorflow, opencv, and keras are fairly massive. 
+### This pip install may also fail if run directly as root, instead of using sudo, though I'm not sure why
+### or if that was a real problem I had or if the problem is between the chair and the keyboard...
 
 ### Let's create a service stub for pwnagotchi at /lib/systemd/system/pwnagotchi.service
 """
