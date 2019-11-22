@@ -30,7 +30,7 @@ https://github.com/stanleyhuangyc/Freematics/issues/17
 '''
 
 # I'm too lazy to care, so you figure it out. Powers on if not powered on.
-if not input("Is the GSM/GPRS/GNSS hat powered on? [y/n]: ").lower().strip()[:1] == "y": 
+if not raw_input("Is the GSM/GPRS/GNSS hat powered on? [y/n]: ").lower().strip()[:1] == "y": 
     GPIO.setmode(GPIO.BOARD)
     GPIO.setup(7, GPIO.OUT)
     GPIO.output(7, GPIO.LOW)
