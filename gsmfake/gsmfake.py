@@ -223,7 +223,7 @@ if __name__ == '__main__':
     special_file = test.gsm_gps_add(arguments[0], speed=speed, pred=fakehook, oneshot=singleshot)
     
     print("[+] Set bettercap gps.device value to: {}".format(special_file))
-    test.spawn()
+    test.run()
 
 # The following sets edit modes for GNU EMACS
 # Local Variables:
