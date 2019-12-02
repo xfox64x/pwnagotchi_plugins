@@ -24,9 +24,18 @@ TODO: Figure out how to coalesce multiple GPS sources into a more accurate locat
 ## notes_on_pwnagotchi_on_other_pis_and_raspbian.txt
 Notes on how I got things running on Pi 3 b+/Pi 4/Raspbian etc.
 
+## gps.go
+Replacement for bettercap's gps.go to get it working with gpsd, for a more robust, multiplexed GPS experience. Bettercap will get GPS updates by polling gpsd, allowing other processes access to the GPS data; not just bettercap. Requires that you have gpsd installed and configured, as well as [Stratoberry's go-gpsd](github.com/stratoberry/go-gpsd). So replace your `~/go/src/github.com/bettercap/bettercap/modules/gps/gps.go` with this one, do a little `make build`, and replace your bettercap binary with the one you just built. My gpsd.conf looks a little something like:
+```
+START_DAEMON="true"
+USBAUTO="true"
+DEVICES="/dev/ttyUSB0" 
+GPSD_OPTIONS="-n -r"
+GPSD_SOCKET="/var/run/gpsd.sock"
+``` 
+There's no clear benefit to using more than one GPS device, beyond testing antenna/signal strength (your receivers aren't magically more accurate). 
 
 #### Coming soon
 * Comms over GSM/GPRS
-* Modifications to the Wiggle plugin
 * That WPS shit everyone keeps talking about
 * OpenVPN and then TOR support for plugins/pieces that touch the internet.
