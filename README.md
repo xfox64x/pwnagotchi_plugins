@@ -24,15 +24,9 @@ TODO: Figure out how to coalesce multiple GPS sources into a more accurate locat
 ## notes_on_pwnagotchi_on_other_pis_and_raspbian.txt
 Notes on how I got things running on Pi 3 b+/Pi 4/Raspbian etc.
 
-## gps.go
-Replacement for bettercap's gps.go to get it working with gpsd, for a more robust, multiplexed GPS experience. Bettercap will get GPS updates by polling gpsd, allowing other processes access to the GPS data; not just bettercap. Requires that you have gpsd installed and configured, as well as [Stratoberry's go-gpsd](github.com/stratoberry/go-gpsd). So replace your `~/go/src/github.com/bettercap/bettercap/modules/gps/gps.go` with this one, do a little `make build`, and replace your bettercap binary with the one you just built. My gpsd.conf looks a little something like:
-```
-START_DAEMON="true"
-USBAUTO="true"
-DEVICES="/dev/ttyUSB0" 
-GPSD_OPTIONS="-n -r"
-GPSD_SOCKET="/var/run/gpsd.sock"
-``` 
+## gps/gps.*
+Replacements for bettercap's gps.go and pwnagotchi's gps.py to get it working with gpsd, for a more robust, multiplexed GPS experience. Bettercap will get GPS updates by polling gpsd, allowing other processes access to the GPS data; not just bettercap. Requires that you have gpsd installed and configured, as well as [Stratoberry's go-gpsd](github.com/stratoberry/go-gpsd). So install and configure gpsd, replace your `~/go/src/github.com/bettercap/bettercap/modules/gps/gps.go` with the Go script, replace `~/git/pwnagotchi-1.0.1/pwnagotchi/plugins/default/gps.py` with the Python script, modify your pwnagotchi config with the included config, change back to the bettercap directory, do a little `make build`, and replace your bettercap binary with the one you just built.
+
 There's no clear benefit to using more than one GPS device, beyond testing antenna/signal strength (your receivers aren't magically more accurate). 
 
 #### Coming soon
