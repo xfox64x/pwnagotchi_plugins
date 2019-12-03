@@ -1,4 +1,4 @@
-__author__ = 'evilsocket@gmail.com'
+__author__ = 'forrest'
 __version__ = '1.0.0'
 __name__ = 'gps'
 __license__ = 'GPL3'
