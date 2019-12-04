@@ -5,7 +5,7 @@ I don't know if I really like this pwnagotchi project. It's useful because it re
 
 Please don't break the law and/or use anything here to break the law. Laws vary, depending on location, so always be aware of what you're doing and where you're doing it. 
 
-## quick_rides_to_jail.py
+## quick_rides_to_jail/*
 Almost certainly illegal, wherever you are, if not used for research purposes against your own equipment. It replaces quickdic.py, completing the pwn process by adding any cracked access points to wpa_supplicant's config (by BSSID) and restarting wpa_supplicant for the hardcoded interface, enabling automatic authentication when in range of a pwnd AP. This was the easiest solution I could come up with for authenticating to a wireless network, with cracked creds, when the network is in range. Managing all of that in one Python script would be a terrible multithreaded mess that would probably end up fighting against most OS's network management services for dominance. I wrote this in a mostly-default Raspbian build, on both a Raspi 3b+ and 4, and I can't remember if the pwnagotchi image has wpa_supplicant and some network manager running. One also needs a separate wireless interface if one expects to connect to pwnt AP's while still running the pwnagotchi. Since you're only using this on your own test infrastructure, you shouldn't have to worry about any malicious threats once you've authenticated to and joined your pwnt test infrastructure. Also not meant for skiddies. 
 
 ## wigle.py
