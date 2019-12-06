@@ -32,6 +32,9 @@ Replacements for bettercap's gps.go and pwnagotchi's gps.py to get it working wi
 
 There's no clear benefit to using more than one GPS device, beyond testing antenna/signal strength (your receivers aren't magically more accurate). 
 
+## event_multithreading_for_plugins/*
+I've added logic to multithread and queue events for plugins. It's been noted that the way pwnagotchi handles tasking events on the plugins causes everything to slow, depending on the collective speed of the plugins, because they were being processed serially. The `pwnagotchi/plugins/__init__.py` has been updated to create a thread-managed queue for each event type, for each plugin. When an event is processed on all plugins containing a function definition for the event, it gets added to the back of a queue for processing that specific type of event on a valid plugin, and then the thread will take care of executing the events in the order they came in. Moving forward, this should have little, if any, impact on my future development efforts because I fully expect evilsocket to put out their own multithreaded version soon, but I can't be bothered to follow arbitrary style guides for free. However, I'm not sure this will work on any future evilsocket pwnagotchi releases because I cannot predict what they will do. My pwnagotchi fork should contain all of the fixes/plugins/etc. here; I'll consider being an asshole in the future.  
+
 #### Coming soon
 * Comms over GSM/GPRS
 * That WPS shit everyone keeps talking about
